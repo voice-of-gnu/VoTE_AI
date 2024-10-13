@@ -22,7 +22,7 @@ import tensorflow as tf
 from tensorflow.keras import Model, layers
 
 import features as features_lib
-
+import os
 
 def _batch_norm(name, params):
   def _bn_layer(layer_input):
@@ -127,20 +127,31 @@ def yamnet_frames_model(params):
       outputs=[predictions, embeddings, log_mel_spectrogram])
   return frames_model
 
-def yamnet_embedding_model(params):
+def yamnet_embedding_model(params, weights_path = None):
   """
   Defines the YAMNet embedding
   """
-  waveform = layers.Input(batch_shape=(None,), dtype=tf.float32)
+  waveform = layers.Input(batch_shape=(None,), dtype=tf.float32, name='waveform_input')
   waveform_padded = features_lib.pad_waveform(waveform, params)
-  log_mel_spectrogram, features = features_lib.waveform_to_log_mel_spectrogram_patches(
-      waveform_padded, params)
-  net = layers.Reshape((-1, params.mel_bands, 1))(features)
-  
-  for (i, (layer_fun, kernel, stride, filters)) in enumerate(_YAMNET_LAYER_DEFS):
-        net = layer_fun('layer{}'.format(i + 1), kernel, stride, filters, params)(net)
+  log_mel_spectrogram, features = features_lib.waveform_to_log_mel_spectrogram_patches(waveform_padded, params)
+  net = layers.Reshape((-1, params.mel_bands, 1), name='reshape_features')(features)
+  for i, (layer_fun, kernel, stride, filters) in enumerate(_YAMNET_LAYER_DEFS):
+      net = layer_fun(f'layer{i + 1}', kernel, stride, filters, params)(net)
   embeddings = layers.GlobalAveragePooling2D(name='embedding_output')(net)
-  embedding_model = Model(name='yamnet_embedding', inputs=waveform, outputs=embeddings)
+  embedding_model = Model(
+        name='yamnet_embedding',
+        inputs=waveform,
+        outputs=embeddings
+  )
+  if weights_path:
+    if os.path.exists(weights_path):
+      try:
+        embedding_model.load_weights(weights_path, by_name=True)
+        print(f"Successfully loaded weights from {weights_path}")
+      except Exception as e:
+        print(f"Error loading weights from {weights_path}: {e}")
+    else:
+      print(f"Weights file {weights_path} does not exist.")
   return embedding_model
 
 def class_names(class_map_csv):
