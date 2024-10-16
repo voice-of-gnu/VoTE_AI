@@ -143,6 +143,10 @@ def yamnet_embedding_model(params, weights_path = None):
         inputs=waveform,
         outputs=embeddings
   )
+  for layer in embedding_model.layers:
+    if '/' in layer.name:
+        new_name = layer.name.replace('/', '_')
+        layer._name = new_name 
   if weights_path:
     if os.path.exists(weights_path):
       try:

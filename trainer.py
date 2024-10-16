@@ -30,6 +30,7 @@ def load_split_data_from_json(root_path, sr = 16000):
     label_path = os.path.join(root_path, "label")
     data_path = os.path.join(root_path, "data")
     json_list = glob.glob(os.path.join(label_path,'*.json'))
+    shuffle(json_list)
     for path in json_list:
         with open(path, 'r') as f:
             data = json.load(f)
@@ -105,10 +106,10 @@ if __name__ == "__main__":
 
     params = yamnet_params.Params()
 
-    embedding_model = yamnet_model.yamnet_embedding_model(params, "yamnet.h5")
+    embedding_model = yamnet_model.yamnet_embedding_model(params, "my_yamnet.h5")
 
     for layer in embedding_model.layers:
-        layer.trainable = False
+        layer.trainable = True
 
     num_classes = len(emotion_enc)
     prediction_net = prediction_model(input_shape=(1024,), num_classes=num_classes)
@@ -126,12 +127,12 @@ if __name__ == "__main__":
     epoch = 10
 
     lr_schedule = optimizers.schedules.CosineDecay(
-        initial_learning_rate=0.01,
-        decay_steps=epoch
+        initial_learning_rate=0.001,
+        decay_steps=1000
     )
 
     optimizer = optimizers.Adam(lr_schedule)
-    save_dir = 'results'
+    save_dir = 'results_pretrain_emb'
     save_callback = SaveModelAtEpochEnd(save_dir=save_dir)
     model.compile(
         optimizer= optimizer,
