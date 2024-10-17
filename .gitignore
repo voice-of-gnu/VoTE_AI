@@ -1,1 +1,6 @@
-.test_data/
+test_data/
+__pycache__/
+features.py
+emotion_classifier copy.ipynb
+features.py
+saved_model/
