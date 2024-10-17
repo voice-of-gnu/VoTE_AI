@@ -16,11 +16,13 @@ import features as features_lib
 from random import shuffle
 
 import librosa
+import wave
 import json
 import glob
 
 from tqdm import tqdm
 
+import gc
 
 intense = {"약함" : 0.,"보통":1.,"강함":2.}
 emotion_enc = {"기쁨" : 0, "사랑스러움" : 1, "두려움" : 2, "화남" : 3, "슬픔" : 4, "놀라움" : 5, "없음" : 6}
@@ -30,21 +32,35 @@ def load_split_data_from_json(root_path, sr = 16000):
     label_path = os.path.join(root_path, "label")
     data_path = os.path.join(root_path, "data")
     json_list = glob.glob(os.path.join(label_path,'*.json'))
-    shuffle(json_list)
-    for path in json_list:
+    #shuffle(json_list)
+    gc.disable()
+    for i, path in enumerate(json_list):
+        #gc.collect()
         with open(path, 'r') as f:
             data = json.load(f)
         
+        #if i ^ ((1 << 10) - 1) == 0:
+        #    gc.enable()
+        #    gc.collect()
+        #    gc.disable()
         wav_name = os.path.join(data_path, os.path.basename(path).split(".")[0] + ".wav")
         audio, _ = librosa.load(wav_name, sr=sr)
+        audio = np.array(audio[:int(2 * 0.96 * sr)])
+        # with wave.open(wav_name, 'rb') as wav_file:
+        #     frame_rate = sr
+        #     start_time = 0  # 시작 시간(초)
+        #     duration = 2 * 0.96    # 읽을 시간 길이(초)
+        #     num_frames = int(frame_rate * duration)
+
+        #     frames = wav_file.readframes(num_frames)
+        #     audio = np.frombuffer(frames, dtype=np.int16)
 
         text = data['text']
-        emotion_category = data["emotion_category"]
-        emotion_intense = data["emotion_intense"]
+        emotion_category = float(data["emotion_category"])
+        emotion_intense = float(data["emotion_intense"])
         
-        yield np.array(audio), emotion_category, emotion_intense
+        yield audio, emotion_category, emotion_intense
 
-        #return audios, np.array(y_emotion_class), np.array(y_emotion_intensity)
 
 def preprocess(audio_segment, emotion_category, emotion_intensity):
     labels = {
@@ -79,11 +95,11 @@ class SaveModelAtEpochEnd(tf.keras.callbacks.Callback):
 
 if __name__ == "__main__":
     gpus = tf.config.list_physical_devices('GPU')
-    print(gpus)
+    #print(gpus)
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
     
-    train_path = "D:/emotion_split/train"
+    train_path = "C:/Users/jspark/Desktop/train"
 
     dataset = tf.data.Dataset.from_generator(
         lambda: load_split_data_from_json(train_path),
@@ -93,16 +109,20 @@ if __name__ == "__main__":
             tf.TensorSpec(shape=(), dtype=tf.float32)
         )
     )
+    #dataset = dataset.cache()
+    dataset = dataset.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+    #dataset = dataset.cache()
 
-    dataset = dataset.map(preprocess, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset = dataset.shuffle(buffer_size=1000)
-    batch_size = 16
+
+    #dataset = dataset.shuffle(buffer_size=5000)
+    batch_size = 64
     dataset = dataset.padded_batch(
         batch_size,
         padded_shapes=([None, ], {'emotion_class_output': [], 'emotion_intensity_output': []}),
         padding_values=(0.0, {'emotion_class_output': 0, 'emotion_intensity_output': 0.0})
     )
-    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
     params = yamnet_params.Params()
 
@@ -128,11 +148,11 @@ if __name__ == "__main__":
 
     lr_schedule = optimizers.schedules.CosineDecay(
         initial_learning_rate=0.001,
-        decay_steps=1000
+        decay_steps=100
     )
 
     optimizer = optimizers.Adam(lr_schedule)
-    save_dir = 'results_pretrain_emb'
+    save_dir = f'results_pretrain_emb_{batch_size}'
     save_callback = SaveModelAtEpochEnd(save_dir=save_dir)
     model.compile(
         optimizer= optimizer,
@@ -144,7 +164,7 @@ if __name__ == "__main__":
             'emotion_class_output': 'accuracy',
             'emotion_intensity_output': 'mae'
         },
-        run_eagerly=True
+        #run_eagerly=True
     )
 
     model.fit(dataset, epochs=epoch, verbose=1,callbacks=[save_callback])
