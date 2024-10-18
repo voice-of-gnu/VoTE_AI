@@ -70,10 +70,6 @@ dataset = tf.data.Dataset.from_generator(
 dataset = dataset.map(preprocess, num_parallel_calls=tf.data.AUTOTUNE)
 dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
-# 5. 여러 테스트 샘플에 대한 추론 수행
-correct_predictions = 0
-total_predictions = 10  # 테스트할 데이터 샘플 수
-
 cnt = 84160
 
 pbar =  tqdm(dataset, total=cnt)
